@@ -9,13 +9,13 @@ public class CommandLineTests
 {
     private static readonly IList<OptionCase> OptionCases =
     [
-        new("--artifact-size", "0.25", o => o.ArtifactSizeMeters, 0.25),
-        new("--focal-length", "1.5", o => o.FocalLengthMeters, 1.5),
+        new("--artifact-size", "250", o => o.ArtifactSizeMm, 250.0),
+        new("--focal-length", "1500", o => o.FocalLengthMm, 1500.0),
         new("--iterations", "9", o => o.Iterations, 9),
+        new("--resize", "256", o => o.ResizeTo, 256),
         new("--loss-divisor", "1024", o => o.LossNormalisationDivisor, 1024),
         new("--height-scale", "2.5", o => o.HeightScale, 2.5),
-        new("--height-offset", "-3", o => o.HeightOffset, -3.0),
-        new("--solidify-offset", "40", o => o.SolidifyOffset, 40.0),
+        new("--minimum-depth", "3.5", o => o.MinimumDepthMm, 3.5),
     ];
 
     private static readonly IList<string[]> RejectedCases =
@@ -29,7 +29,11 @@ public class CommandLineTests
         ["--loss-divisor", "0", "cat.jpg"],
         ["--loss-divisor", "half", "cat.jpg"],
         ["--height-scale", "wide", "cat.jpg"],
-        ["--solidify-offset", "deep", "cat.jpg"],
+        ["--minimum-depth", "deep", "cat.jpg"],
+        ["--minimum-depth", "0", "cat.jpg"],
+        ["--minimum-depth", "-2", "cat.jpg"],
+        ["--resize", "1", "cat.jpg"],
+        ["--resize", "big", "cat.jpg"],
         ["--artifact-size"],
         ["--unknown-option", "1", "cat.jpg"],
         ["--no-loss-images"],
@@ -123,6 +127,25 @@ public class CommandLineTests
             Assert.That(
                 parsed.Options.OutputDirectory,
                 Is.EqualTo(Path.Combine(Environment.CurrentDirectory, "output")));
+        });
+    }
+
+    [TestCase("none")]
+    [TestCase("NONE")]
+    public void TryParse_ResizeOfNone_LeavesTheImageAtItsOwnSize(string value)
+    {
+        // GIVEN the opt-out form of resize
+        string[] args = ["cat.jpg", "--resize", value];
+
+        // WHEN the arguments are parsed
+        bool parsedOk = CommandLine.TryParse(args, out ParsedArguments? parsed, out string message);
+
+        // THEN no resize is requested, which is also the default
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsedOk, Is.True, message);
+            Assert.That(parsed!.Options.ResizeTo, Is.Null);
+            Assert.That(new CausticsOptions().ResizeTo, Is.Null);
         });
     }
 
@@ -220,13 +243,13 @@ public class CommandLineTests
         // GIVEN the CausticsOptions properties that take a value on the command line
         string[] valued =
         [
-            nameof(CausticsOptions.ArtifactSizeMeters),
-            nameof(CausticsOptions.FocalLengthMeters),
+            nameof(CausticsOptions.ArtifactSizeMm),
+            nameof(CausticsOptions.FocalLengthMm),
             nameof(CausticsOptions.Iterations),
+            nameof(CausticsOptions.ResizeTo),
             nameof(CausticsOptions.LossNormalisationDivisor),
             nameof(CausticsOptions.HeightScale),
-            nameof(CausticsOptions.HeightOffset),
-            nameof(CausticsOptions.SolidifyOffset),
+            nameof(CausticsOptions.MinimumDepthMm),
         ];
 
         // WHEN the full property set is compared against the valued ones plus those covered elsewhere

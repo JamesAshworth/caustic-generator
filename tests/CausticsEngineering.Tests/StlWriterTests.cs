@@ -124,7 +124,7 @@ public class StlWriterTests
             }
         }
 
-        Mesh solid = MeshBuilder.Solidify(surface, offset: 5);
+        Mesh solid = MeshBuilder.Solidify(surface, bottomZ: -5);
 
         // WHEN it is saved
         StlWriter.Save(solid, _file);

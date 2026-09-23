@@ -23,7 +23,7 @@ public static class Program
             return 1;
         }
 
-        double[,] image = ImageIo.LoadGreyscale(parsed.ImagePath);
+        double[,] image = ImageIo.LoadGreyscale(parsed.ImagePath, options.ResizeTo);
         Console.WriteLine($"Loaded {image.GetLength(0)}x{image.GetLength(1)} image from {parsed.ImagePath}");
 
         CausticsEngine engine = new(options, Console.WriteLine);
@@ -35,7 +35,12 @@ public static class Program
             Console.WriteLine($"Wrote lens mesh to {Path.Combine(options.OutputDirectory, "original_image.obj")}");
         }
 
-        Console.WriteLine($"Meters per pixel: {result.MetersPerPixel}");
+        double widthMm = image.GetLength(0) * result.MmPerPixel;
+        double heightMm = image.GetLength(1) * result.MmPerPixel;
+
+        Console.WriteLine(
+            $"Lens {widthMm:0.##} x {heightMm:0.##} mm at {result.MmPerPixel} mm/pixel, " +
+            $"minimum depth {options.MinimumDepthMm} mm");
 
         return 0;
     }

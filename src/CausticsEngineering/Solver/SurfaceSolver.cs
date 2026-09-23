@@ -14,14 +14,16 @@ public static class SurfaceSolver
         Mesh mesh,
         double[,] image,
         double focalLength,
-        double artifactWidthMeters,
+        double artifactLongestEdgeMeters,
         Action<string>? log = null)
     {
         int width = image.GetLength(0);
         int height = image.GetLength(1);
 
         double h = focalLength;
-        double metersPerPixel = artifactWidthMeters / width;
+        // Scale off the longer axis, so the artifact size is the longest edge of the lens
+        // whatever the image's aspect ratio
+        double metersPerPixel = artifactLongestEdgeMeters / Math.Max(width, height);
         log?.Invoke($"Meters per pixel: {metersPerPixel}");
 
         double[,] normalX = new double[width + 1, height + 1];
@@ -63,18 +65,27 @@ public static class SurfaceSolver
         return (heights, metersPerPixel);
     }
 
-    /// Writes the solved heights onto the mesh. The mesh is one node wider and taller than the
-    /// height field, so the trailing row and column repeat their neighbour.
-    public static void SetHeights(Mesh mesh, double[,] heights, double heightScale = 1.0, double heightOffset = 10)
+    /// Writes the solved heights onto the mesh and converts the whole mesh from pixel units into
+    /// millimetres. The surface is shifted so its lowest point sits at exactly z = 0, which makes
+    /// the back face's depth the minimum material thickness. XY is shifted to start at the origin,
+    /// so the model's bounding box is the artifact size.
+    /// The mesh is one node wider and taller than the height field, so the trailing row and column
+    /// repeat their neighbour.
+    public static void SetHeightsInMillimetres(Mesh mesh, double[,] heights, double mmPerPixel, double heightScale = 1.0)
     {
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(heights);
+
         int width = heights.GetLength(0);
         int height = heights.GetLength(1);
+
+        double lowest = ScalarField.Min(heights) * heightScale;
 
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                mesh.NodeArray[x, y].Z = heights[x, y] * heightScale + heightOffset;
+                mesh.NodeArray[x, y].Z = (heights[x, y] * heightScale - lowest) * mmPerPixel;
             }
         }
 
@@ -86,6 +97,13 @@ public static class SurfaceSolver
         for (int x = 0; x <= width; x++)
         {
             mesh.NodeArray[x, height].Z = mesh.NodeArray[x, height - 1].Z;
+        }
+
+        // XY last: the height pass above reads nothing from XY, and FindSurface has already run
+        foreach (Point3D node in mesh.Nodes)
+        {
+            node.X = (node.X - 1) * mmPerPixel;
+            node.Y = (node.Y - 1) * mmPerPixel;
         }
     }
 }

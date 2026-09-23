@@ -1,5 +1,6 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace CausticsEngineering.Io;
 
@@ -7,9 +8,20 @@ public static class ImageIo
 {
     /// Loads an image as a greyscale field indexed [x, y] with values in 0..1.
     /// Rec. 601 luma weights match the greyscale conversion used by the reference implementation.
-    public static double[,] LoadGreyscale(string filename)
+    /// resizeTo caps the longest edge, preserving aspect ratio, which caps solver cost on a large
+    /// input. Null loads the image as-is. An image already within the cap is left alone.
+    public static double[,] LoadGreyscale(string filename, int? resizeTo = null)
     {
         using Image<Rgb24> image = Image.Load<Rgb24>(filename);
+
+        if (resizeTo is int longestEdge && Math.Max(image.Width, image.Height) > longestEdge)
+        {
+            image.Mutate(context => context.Resize(new ResizeOptions
+            {
+                Size = new Size(longestEdge, longestEdge),
+                Mode = ResizeMode.Max,
+            }));
+        }
 
         double[,] field = new double[image.Width, image.Height];
         image.ProcessPixelRows(accessor =>

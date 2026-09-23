@@ -73,7 +73,7 @@ public class MeshBuilderTests
         Mesh surface = MeshBuilder.Square(4, 4);
 
         // WHEN it is solidified
-        Mesh solid = MeshBuilder.Solidify(surface, offset: 10);
+        Mesh solid = MeshBuilder.Solidify(surface, bottomZ: -10);
 
         // THEN it has a top and bottom surface plus two triangles per edge node,
         // and every triangle references a real node
@@ -89,16 +89,41 @@ public class MeshBuilderTests
     }
 
     [Test]
-    public void Solidify_BottomSurface_SitsAtNegativeOffset()
+    public void Solidify_BottomSurface_SitsAtTheGivenBottomZ()
     {
         // GIVEN a flat surface at z = 0
         Mesh surface = MeshBuilder.Square(3, 3);
 
-        // WHEN it is solidified with an offset of 7
-        Mesh solid = MeshBuilder.Solidify(surface, offset: 7);
+        // WHEN it is solidified with a back face 7 below
+        Mesh solid = MeshBuilder.Solidify(surface, bottomZ: -7);
 
         // THEN the bottom half of the node list sits at -7
         Assert.That(solid.Nodes.Take(9).Select(n => n.Z), Has.All.EqualTo(-7));
+    }
+
+    [Test]
+    public void Solidify_WithGridScale_BuildsTheBackFaceOnTheUndistortedGridInTheSurfacesUnits()
+    {
+        // GIVEN a 3x3 surface whose nodes have marched away from their grid positions
+        Mesh surface = MeshBuilder.Square(3, 3);
+        foreach (Point3D node in surface.Nodes)
+        {
+            node.X = (node.X - 1) * 0.5 + 0.37;
+            node.Y = (node.Y - 1) * 0.5;
+        }
+
+        // WHEN it is solidified with a grid step of 0.5 units
+        Mesh solid = MeshBuilder.Solidify(surface, bottomZ: -2, gridScale: 0.5);
+
+        // THEN the back face is a clean rectangle on the grid, in the surface's units,
+        // regardless of where the top surface's nodes ended up
+        Assert.Multiple(() =>
+        {
+            Assert.That(solid.Nodes[0].X, Is.EqualTo(0));
+            Assert.That(solid.Nodes[0].Y, Is.EqualTo(0));
+            Assert.That(solid.Nodes[8].X, Is.EqualTo(1.0));
+            Assert.That(solid.Nodes[8].Y, Is.EqualTo(1.0));
+        });
     }
 
     [Test]

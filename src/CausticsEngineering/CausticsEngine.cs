@@ -4,23 +4,26 @@ using CausticsEngineering.Solver;
 
 namespace CausticsEngineering;
 
+/// All lengths are millimetres. The pixel-to-millimetre scale is derived from the image's own
+/// longest edge, so no dimension is tied to a particular image size or aspect ratio.
 public sealed record CausticsOptions
 {
-    public double ArtifactSizeMeters { get; init; } = 0.1;
+    /// Longest edge of the printed lens. The other edge follows from the image's aspect ratio.
+    public double ArtifactSizeMm { get; init; } = 100;
 
-    public double FocalLengthMeters { get; init; } = 0.2;
+    public double FocalLengthMm { get; init; } = 200;
 
     public int Iterations { get; init; } = 4;
 
     public double HeightScale { get; init; } = 1.0;
 
-    public double HeightOffset { get; init; } = 10;
+    /// Material thickness at the thinnest point of the lens. The solved surface is shifted so its
+    /// lowest point sits at z = 0 and the flat back face is placed this far below it.
+    public double MinimumDepthMm { get; init; } = 10;
 
-    public double SolidifyOffset { get; init; } = 100;
-
-    /// Divisor used to zero-centre the loss field. The reference implementation hardcodes 512 * 512
-    /// regardless of image size, so images of other sizes get a differently scaled offset there.
-    /// Null reproduces that behaviour; set it to use the actual pixel count instead.
+    /// Divisor used to zero-centre the loss field. Null uses the image's pixel count, which is
+    /// what the maths wants. The reference implementation hardcodes 262144 (512 * 512) whatever the
+    /// image size, so pass that explicitly for bit-for-bit parity with it on other sizes.
     public int? LossNormalisationDivisor { get; init; }
 
     public string OutputDirectory { get; init; } = ".";
@@ -30,14 +33,17 @@ public sealed record CausticsOptions
     /// STL is always written. Set this to additionally write OBJ, which preserves vertex sharing
     /// and grid dimensions and so can be loaded back into a Mesh via ObjWriter.Load.
     public bool AlsoSaveObj { get; init; }
+
+    /// Longest edge the input image is resized to before solving, preserving aspect ratio.
+    /// Both Poisson solves cost O(pixels) per sweep over thousands of sweeps, so this caps the
+    /// work on a large input. Null, the default, solves at the image's own size.
+    public int? ResizeTo { get; init; }
 }
 
-public sealed record CausticsResult(Mesh Mesh, double[,] NormalisedImage, double[,] Heights, double MetersPerPixel);
+public sealed record CausticsResult(Mesh Mesh, double[,] NormalisedImage, double[,] Heights, double MmPerPixel);
 
 public sealed class CausticsEngine(CausticsOptions? options = null, Action<string>? log = null)
 {
-    private const int ReferenceLossDivisor = 512 * 512;
-
     private readonly CausticsOptions _options = options ?? new CausticsOptions();
 
     /// Solves for the lens that focuses light into the given greyscale image and writes the
@@ -72,36 +78,32 @@ public sealed class CausticsEngine(CausticsOptions? options = null, Action<strin
             RunIteration(mesh, target, $"it{iteration}");
         }
 
+        // The solver works in metres; the public surface is millimetres
         (double[,] heights, double metersPerPixel) = SurfaceSolver.FindSurface(
             mesh,
             target,
-            _options.FocalLengthMeters,
-            _options.ArtifactSizeMeters,
+            _options.FocalLengthMm / 1000.0,
+            _options.ArtifactSizeMm / 1000.0,
             log);
 
-        SurfaceSolver.SetHeights(mesh, heights, _options.HeightScale, _options.HeightOffset);
+        double mmPerPixel = metersPerPixel * 1000.0;
 
-        Mesh solidMesh = MeshBuilder.Solidify(mesh, _options.SolidifyOffset);
+        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel, _options.HeightScale);
+
+        // The surface now bottoms out at z = 0, so the back face goes one minimum depth below it.
+        // STL and OBJ are unitless, and slicers read both as millimetres.
+        Mesh solidMesh = MeshBuilder.Solidify(mesh, -_options.MinimumDepthMm, mmPerPixel);
 
         Directory.CreateDirectory(_options.OutputDirectory);
-        double meshScale = 1 / 512.0 * _options.ArtifactSizeMeters;
 
-        StlWriter.Save(
-            solidMesh,
-            Path.Combine(_options.OutputDirectory, "original_image.stl"),
-            scale: meshScale,
-            scaleZ: meshScale);
+        StlWriter.Save(solidMesh, Path.Combine(_options.OutputDirectory, "original_image.stl"));
 
         if (_options.AlsoSaveObj)
         {
-            ObjWriter.Save(
-                solidMesh,
-                Path.Combine(_options.OutputDirectory, "original_image.obj"),
-                scale: meshScale,
-                scaleZ: meshScale);
+            ObjWriter.Save(solidMesh, Path.Combine(_options.OutputDirectory, "original_image.obj"));
         }
 
-        return new CausticsResult(mesh, target, heights, metersPerPixel);
+        return new CausticsResult(mesh, target, heights, mmPerPixel);
     }
 
     /// One outer step: measure how much light each mesh quad currently delivers, solve the
@@ -126,7 +128,7 @@ public sealed class CausticsEngine(CausticsOptions? options = null, Action<strin
             }
         }
 
-        ScalarField.SubtractMean(loss, _options.LossNormalisationDivisor ?? ReferenceLossDivisor);
+        ScalarField.SubtractMean(loss, _options.LossNormalisationDivisor ?? (width * height));
 
         log?.Invoke($"Loss {suffix}: min {ScalarField.Min(loss)}, max {ScalarField.Max(loss)}, sum {ScalarField.Sum(loss)}");
 

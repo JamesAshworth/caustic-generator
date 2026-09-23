@@ -21,7 +21,8 @@ The original is Julia; this is a direct transliteration of the same algorithm. S
 4. Turn the resulting node displacements into refracted ray angles, apply Snell's law at n = 1.49 to get
    the required surface normals, and solve a second Poisson problem for the height field whose gradient
    matches them.
-5. Write the heights onto the mesh, solidify it (flat bottom + skirt), and save as binary STL.
+5. Write the heights onto the mesh, converting from pixels to millimetres and shifting the surface so
+   its lowest point is z = 0, solidify it (flat back face + skirt), and save as binary STL.
 
 ## Layout
 
@@ -45,13 +46,13 @@ red) to the output directory (default `./output`). Run with `--help` for the sam
 
 | Flag | Default | Effect |
 |------|---------|--------|
-| `--artifact-size <metres>` | `0.1` | Width of the printed lens |
-| `--focal-length <metres>` | `0.2` | Distance from lens to projection surface |
+| `--artifact-size <mm>` | `100` | Longest edge of the printed lens |
+| `--focal-length <mm>` | `200` | Distance from lens to projection surface |
 | `--iterations <n>` | `4` | Outer march iterations |
-| `--loss-divisor <n\|pixels>` | `262144` | Divisor that zero-centres the loss field. `pixels` uses the true pixel count |
+| `--resize <n\|none>` | `none` | Cap the image's longest edge at n before solving, preserving aspect, to cap solver cost |
+| `--loss-divisor <n\|pixels>` | `pixels` | Divisor that zero-centres the loss field. Pass `262144` for parity with upstream |
+| `--minimum-depth <mm>` | `10` | Material thickness at the thinnest point |
 | `--height-scale <x>` | `1` | Multiplier applied to solved heights |
-| `--height-offset <x>` | `10` | Constant added to solved heights |
-| `--solidify-offset <x>` | `100` | Depth of the flat bottom below the lens |
 | `--output <dir>` | `./output` | Same as the positional output directory, and wins over it |
 | `--no-loss-images` | off | Skip the loss PNG diagnostics |
 | `--save-obj` | off | Also write OBJ alongside the STL |
@@ -64,10 +65,38 @@ which STL cannot.
 Everything on `CausticsOptions` has a flag, and a test fails if a new option is added without one.
 Options are order-independent and may precede the image.
 
+### Units and scale
+
+**All lengths are millimetres**, in and out. STL and OBJ are unitless and slicers read both as
+millimetres, so the saved model needs no scaling on import.
+
+**Aspect ratio is preserved throughout.** Both `--artifact-size` and `--resize` key off the image's
+**longer** axis, so the scale is `artifactSize / max(imageWidth, imageHeight)` and nothing is pinned
+to a particular image size or orientation. `--artifact-size` is therefore the longest edge of the
+lens, and the other edge follows from the image's proportions — a 2:1 image at `--artifact-size 80`
+gives an 80 x 40 mm lens, or 40 x 80 mm if it is portrait.
+
+`--resize` is off by default, solving at the image's native size. Given a value it caps the longer
+edge and scales the other to match, never upscaling a smaller image. Worth setting for a large
+input: both Poisson solves cost O(pixels) per sweep over thousands of sweeps.
+
+Depth is expressed as one number rather than two offsets. The solved surface is shifted so its
+**lowest point sits at exactly z = 0**, and the flat back face is placed `--minimum-depth` below
+that, so the flag is literally the material thickness at the thinnest point of the lens:
+
+```
+z =  0 + relief   <- lens surface, lowest point at exactly 0
+z = -minimumDepth <- flat back face
+```
+
+The model's bounding box is therefore the artifact size on its longer axis, the aspect-scaled
+length on the other, and `minimumDepth + relief` deep. XY starts at the origin, give or take a few
+hundredths of a millimetre where marched edge nodes drift just outside the grid.
+
 ```bash
-# Bigger, longer-throw lens, three iterations, true-pixel-count loss normalisation
+# Bigger, longer-throw lens, three iterations, thinner at its thinnest point
 dotnet run --project src/CausticGenerator.Cli -c Release -- cat.jpg ./out \
-    --artifact-size 0.15 --focal-length 0.3 --iterations 3 --loss-divisor pixels
+    --artifact-size 150 --focal-length 300 --iterations 3 --minimum-depth 4
 ```
 
 Or publish once and invoke the binary:
@@ -79,9 +108,16 @@ dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
 
 ## Deviations from the Julia original
 
-- **Loss normalisation divisor.** Upstream divides the loss sum by a hardcoded `512 * 512` regardless of
-  image size. That is reproduced by default so output matches; set
-  `CausticsOptions.LossNormalisationDivisor` to use the true pixel count instead.
+- **Scale is derived, not hardcoded.** Upstream hardcodes `512` in two places: the loss-normalisation
+  divisor, and the metres-per-unit factor applied when saving. Both are computed from the image here,
+  off its longer axis, which is the whole reason output can be trusted at sizes and aspect ratios
+  other than 512 x 512. Pass `--loss-divisor 262144` for bit-for-bit parity with upstream on other
+  sizes.
+- **Depth is one flag, not two offsets.** Upstream has a `heightOffset` added to solved heights and a
+  separate `solidify` offset for the back face, both in pixel units, with the surface free to sit
+  anywhere relative to z = 0. This zeroes the lowest point of the surface and takes a single
+  `--minimum-depth` in millimetres. See "Units and scale".
+- **Output is in millimetres.** Upstream writes metres, scaled by the hardcoded 512 factor.
 - **Relaxation branches collapsed.** The original spells out nine cases (four corners, four edges,
   interior). This sums the neighbours that exist and divides by that count, which is arithmetically
   identical.
@@ -99,9 +135,11 @@ dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
 dotnet test
 ```
 
-72 tests covering triangle geometry, mesh construction and solidification, gradient and pixel-area
+91 tests covering triangle geometry, mesh construction and solidification, gradient and pixel-area
 computation, relaxation convergence (including that a non-zero-mean source has no solution), the
 non-inverting march guarantee, STL facet layout and normals, OBJ round-tripping, CLI parsing of every
-option, and the end-to-end pipeline.
+option, image loading and aspect-preserving resize, and the end-to-end pipeline. The depth and scale
+guarantees are asserted against the bounds of the saved STL, so they are checked as a slicer would see
+them rather than in memory, in both landscape and portrait.
 
 Targets .NET 10.

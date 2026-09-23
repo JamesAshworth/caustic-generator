@@ -10,23 +10,31 @@ public static class CommandLine
     public const string Usage = """
         Usage: caustic-generator <image> [output-directory] [options]
 
+        All lengths are millimetres. The pixel-to-millimetre scale is derived from the image's own
+        longest edge, so nothing is tied to a particular image size. Aspect ratio is preserved
+        throughout: --artifact-size is the lens's longest edge, and the other edge follows from the
+        image's proportions.
+
           <image>                     Source image. Any format ImageSharp can read.
           [output-directory]          Where to write output. Defaults to ./output.
 
         Optics:
-          --artifact-size <metres>    Width of the printed lens. Default 0.1.
-          --focal-length <metres>     Distance from lens to projection surface. Default 0.2.
+          --artifact-size <mm>        Longest edge of the printed lens. Default 100.
+          --focal-length <mm>         Distance from lens to projection surface. Default 200.
 
         Solver:
           --iterations <n>            Outer march iterations. Default 4.
-          --loss-divisor <n|pixels>   Divisor used to zero-centre the loss field. Default 262144
-                                      (512 * 512), matching the reference implementation whatever
-                                      the image size. Pass `pixels` to use the true pixel count.
+          --resize <n|none>           Cap the image's longest edge at n before solving, preserving
+                                      aspect ratio, to cap solver cost. Default none.
+          --loss-divisor <n|pixels>   Divisor used to zero-centre the loss field. Default is the
+                                      pixel count. Pass 262144 for parity with the reference
+                                      implementation, which hardcodes 512 * 512.
 
         Mesh:
+          --minimum-depth <mm>        Material thickness at the thinnest point. The surface is
+                                      shifted so its lowest point sits at z = 0 and the flat back
+                                      face goes this far below it. Default 10.
           --height-scale <x>          Multiplier applied to solved heights. Default 1.
-          --height-offset <x>         Constant added to solved heights. Default 10.
-          --solidify-offset <x>       Depth of the flat bottom below the lens. Default 100.
 
         Output:
           --output <dir>              Same as the positional output directory.
@@ -93,7 +101,7 @@ public static class CommandLine
                         return false;
                     }
 
-                    options = options with { ArtifactSizeMeters = artifactSize };
+                    options = options with { ArtifactSizeMm = artifactSize };
                     break;
 
                 case "--focal-length":
@@ -102,7 +110,24 @@ public static class CommandLine
                         return false;
                     }
 
-                    options = options with { FocalLengthMeters = focalLength };
+                    options = options with { FocalLengthMm = focalLength };
+                    break;
+
+                case "--resize":
+                    if (value.Equals("none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options = options with { ResizeTo = null };
+                        break;
+                    }
+
+                    if (!int.TryParse(value, CultureInfo.InvariantCulture, out int edge) || edge < 2)
+                    {
+                        message = $"Option {arg} needs a whole number of 2 or more, or 'none', got '{value}'.";
+
+                        return false;
+                    }
+
+                    options = options with { ResizeTo = edge };
                     break;
 
                 case "--iterations":
@@ -143,22 +168,13 @@ public static class CommandLine
                     options = options with { HeightScale = heightScale };
                     break;
 
-                case "--height-offset":
-                    if (!TryDouble(arg, value, out double heightOffset, out message))
+                case "--minimum-depth":
+                    if (!TryPositiveDouble(arg, value, out double minimumDepth, out message))
                     {
                         return false;
                     }
 
-                    options = options with { HeightOffset = heightOffset };
-                    break;
-
-                case "--solidify-offset":
-                    if (!TryDouble(arg, value, out double solidifyOffset, out message))
-                    {
-                        return false;
-                    }
-
-                    options = options with { SolidifyOffset = solidifyOffset };
+                    options = options with { MinimumDepthMm = minimumDepth };
                     break;
 
                 case "--output":

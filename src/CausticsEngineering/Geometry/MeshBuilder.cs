@@ -58,9 +58,12 @@ public static class MeshBuilder
         return mesh;
     }
 
-    /// Closes an open surface into a printable solid: a flat bottom at -offset, the input
+    /// Closes an open surface into a printable solid: a flat bottom at bottomZ, the input
     /// surface on top, and skirt triangles joining the two around all four edges.
-    public static Mesh Solidify(Mesh inputMesh, double offset = 100)
+    /// The bottom is built from the undistorted node grid, so the back face stays a clean
+    /// rectangle however far the top surface's nodes have marched. gridScale converts a grid
+    /// step into the units the input surface is already in.
+    public static Mesh Solidify(Mesh inputMesh, double bottomZ, double gridScale = 1.0)
     {
         int width = inputMesh.Width;
         int height = inputMesh.Height;
@@ -80,7 +83,7 @@ public static class MeshBuilder
         {
             for (int x = 1; x <= width; x++)
             {
-                Point3D point = new(x, y, -offset, x, y);
+                Point3D point = new((x - 1) * gridScale, (y - 1) * gridScale, bottomZ, x, y);
                 nodes[count++] = point;
                 nodeArrayBottom[x - 1, y - 1] = point;
             }
