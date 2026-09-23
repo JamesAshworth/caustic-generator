@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CausticGenerator.Cli/CausticGenerator.Cli.csproj" />
+    <Project Path="src/CausticsEngineering/CausticsEngineering.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CausticsEngineering.Tests/CausticsEngineering.Tests.csproj" />
+  </Folder>
+</Solution>
