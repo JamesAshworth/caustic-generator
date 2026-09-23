@@ -124,7 +124,7 @@ public class CausticsEngineTests
         double[,] heights = Ramp(3);
 
         // WHEN the heights are applied
-        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel: 0.5, heightScale: 2.0);
+        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel: 0.5);
 
         // THEN the closing row and column repeat their neighbour, so the mesh stays watertight
         Assert.Multiple(() =>
@@ -144,7 +144,7 @@ public class CausticsEngineTests
         heights[1, 1] = -12.5;
 
         // WHEN the heights are applied
-        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel: 0.5, heightScale: 2.0);
+        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel: 0.5);
 
         // THEN the surface is shifted so its lowest point sits at exactly zero
         Assert.Multiple(() =>
@@ -155,20 +155,19 @@ public class CausticsEngineTests
     }
 
     [Test]
-    public void SetHeightsInMillimetres_HeightField_ScalesHeightsAndSpacingIntoMillimetres()
+    public void SetHeightsInMillimetres_HeightField_ConvertsHeightsAndSpacingIntoMillimetres()
     {
         // GIVEN a height field whose lowest value is zero
         Mesh mesh = MeshBuilder.Square(4, 4);
         double[,] heights = Ramp(3);
 
-        // WHEN the heights are applied at 0.5 mm per pixel with a doubling height scale
-        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel: 0.5, heightScale: 2.0);
+        // WHEN the heights are applied at 0.5 mm per pixel
+        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel: 0.5);
 
-        // THEN heights carry both the scale and the pixel pitch, and node spacing is the pitch,
-        // starting from the origin
+        // THEN heights carry the pixel pitch, and node spacing is the pitch, starting from the origin
         Assert.Multiple(() =>
         {
-            Assert.That(mesh.NodeArray[2, 2].Z, Is.EqualTo(4 * 2.0 * 0.5));
+            Assert.That(mesh.NodeArray[2, 2].Z, Is.EqualTo(4 * 0.5));
             Assert.That(mesh.NodeArray[0, 0].X, Is.EqualTo(0));
             Assert.That(mesh.NodeArray[3, 0].X, Is.EqualTo(1.5));
             Assert.That(mesh.NodeArray[0, 3].Y, Is.EqualTo(1.5));

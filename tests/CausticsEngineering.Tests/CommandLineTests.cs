@@ -14,7 +14,6 @@ public class CommandLineTests
         new("--iterations", "9", o => o.Iterations, 9),
         new("--resize", "256", o => o.ResizeTo, 256),
         new("--loss-divisor", "1024", o => o.LossNormalisationDivisor, 1024),
-        new("--height-scale", "2.5", o => o.HeightScale, 2.5),
         new("--minimum-depth", "3.5", o => o.MinimumDepthMm, 3.5),
     ];
 
@@ -28,7 +27,6 @@ public class CommandLineTests
         ["--iterations", "1.5", "cat.jpg"],
         ["--loss-divisor", "0", "cat.jpg"],
         ["--loss-divisor", "half", "cat.jpg"],
-        ["--height-scale", "wide", "cat.jpg"],
         ["--minimum-depth", "deep", "cat.jpg"],
         ["--minimum-depth", "0", "cat.jpg"],
         ["--minimum-depth", "-2", "cat.jpg"],
@@ -37,7 +35,9 @@ public class CommandLineTests
         ["--artifact-size"],
         ["--unknown-option", "1", "cat.jpg"],
         ["--no-loss-images"],
+        ["cat.jpg", "out"],
         ["cat.jpg", "out", "extra"],
+        ["--height-scale", "2", "cat.jpg"],
     ];
 
     [TestCaseSource(nameof(OptionCases))]
@@ -110,23 +110,18 @@ public class CommandLineTests
     }
 
     [Test]
-    public void TryParse_ImageOnly_MatchesTheEngineDefaultsApartFromOutputDirectory()
+    public void TryParse_ImageOnly_MatchesTheEngineDefaults()
     {
         // GIVEN only an image
         // WHEN it is parsed
         bool parsedOk = CommandLine.TryParse(["cat.jpg"], out ParsedArguments? parsed, out string message);
 
-        // THEN every option holds its engine default, and output lands in ./output
-        CausticsOptions defaults = new();
+        // THEN every option holds its engine default, output included
         Assert.Multiple(() =>
         {
             Assert.That(parsedOk, Is.True, message);
-            Assert.That(
-                parsed!.Options with { OutputDirectory = defaults.OutputDirectory },
-                Is.EqualTo(defaults));
-            Assert.That(
-                parsed.Options.OutputDirectory,
-                Is.EqualTo(Path.Combine(Environment.CurrentDirectory, "output")));
+            Assert.That(parsed!.Options, Is.EqualTo(new CausticsOptions()));
+            Assert.That(parsed.Options.OutputDirectory, Is.EqualTo("."));
         });
     }
 
@@ -185,10 +180,10 @@ public class CommandLineTests
     }
 
     [Test]
-    public void TryParse_PositionalOutputDirectory_IsUsed()
+    public void TryParse_OutputFlag_SetsTheOutputDirectory()
     {
-        // GIVEN an image and a positional output directory
-        string[] args = ["cat.jpg", "lens-output"];
+        // GIVEN an image and an output directory
+        string[] args = ["cat.jpg", "--output", "lens-output"];
 
         // WHEN the arguments are parsed
         bool parsedOk = CommandLine.TryParse(args, out ParsedArguments? parsed, out string message);
@@ -202,19 +197,20 @@ public class CommandLineTests
     }
 
     [Test]
-    public void TryParse_OutputFlagAndPositionalDirectory_PrefersTheFlag()
+    public void TryParse_SecondPositionalValue_IsRejectedRatherThanTakenAsTheOutputDirectory()
     {
-        // GIVEN both forms of output directory
-        string[] args = ["cat.jpg", "positional", "--output", "flagged"];
+        // GIVEN a second bare value, which earlier versions read as the output directory
+        string[] args = ["cat.jpg", "lens-output"];
 
         // WHEN the arguments are parsed
         bool parsedOk = CommandLine.TryParse(args, out ParsedArguments? parsed, out string message);
 
-        // THEN the explicit flag wins
+        // THEN it is refused, pointing at the flag, rather than silently writing somewhere else
         Assert.Multiple(() =>
         {
-            Assert.That(parsedOk, Is.True, message);
-            Assert.That(parsed!.Options.OutputDirectory, Is.EqualTo("flagged"));
+            Assert.That(parsedOk, Is.False);
+            Assert.That(parsed, Is.Null);
+            Assert.That(message, Does.Contain("--output"));
         });
     }
 
@@ -248,7 +244,6 @@ public class CommandLineTests
             nameof(CausticsOptions.Iterations),
             nameof(CausticsOptions.ResizeTo),
             nameof(CausticsOptions.LossNormalisationDivisor),
-            nameof(CausticsOptions.HeightScale),
             nameof(CausticsOptions.MinimumDepthMm),
         ];
 

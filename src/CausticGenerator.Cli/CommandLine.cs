@@ -8,7 +8,7 @@ public sealed record ParsedArguments(string ImagePath, CausticsOptions Options);
 public static class CommandLine
 {
     public const string Usage = """
-        Usage: caustic-generator <image> [output-directory] [options]
+        Usage: caustic-generator <image> [options]
 
         All lengths are millimetres. The pixel-to-millimetre scale is derived from the image's own
         longest edge, so nothing is tied to a particular image size. Aspect ratio is preserved
@@ -16,7 +16,6 @@ public static class CommandLine
         image's proportions.
 
           <image>                     Source image. Any format ImageSharp can read.
-          [output-directory]          Where to write output. Defaults to ./output.
 
         Optics:
           --artifact-size <mm>        Longest edge of the printed lens. Default 100.
@@ -34,10 +33,9 @@ public static class CommandLine
           --minimum-depth <mm>        Material thickness at the thinnest point. The surface is
                                       shifted so its lowest point sits at z = 0 and the flat back
                                       face goes this far below it. Default 10.
-          --height-scale <x>          Multiplier applied to solved heights. Default 1.
 
         Output:
-          --output <dir>              Same as the positional output directory.
+          --output <dir>              Where to write output. Defaults to the working directory.
           --no-loss-images            Skip the per-iteration loss PNG diagnostics.
           --save-obj                  Also write OBJ alongside the STL.
           -h, --help                  Show this help.
@@ -61,7 +59,6 @@ public static class CommandLine
 
         List<string> positional = [];
         CausticsOptions options = new();
-        string? outputFlag = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -159,15 +156,6 @@ public static class CommandLine
                     options = options with { LossNormalisationDivisor = divisor };
                     break;
 
-                case "--height-scale":
-                    if (!TryDouble(arg, value, out double heightScale, out message))
-                    {
-                        return false;
-                    }
-
-                    options = options with { HeightScale = heightScale };
-                    break;
-
                 case "--minimum-depth":
                     if (!TryPositiveDouble(arg, value, out double minimumDepth, out message))
                     {
@@ -178,7 +166,7 @@ public static class CommandLine
                     break;
 
                 case "--output":
-                    outputFlag = value;
+                    options = options with { OutputDirectory = value };
                     break;
 
                 default:
@@ -195,18 +183,14 @@ public static class CommandLine
             return false;
         }
 
-        if (positional.Count > 2)
+        if (positional.Count > 1)
         {
-            message = $"Expected at most an image and an output directory, got {positional.Count} values.";
+            message = $"Expected a single image, got {positional.Count} values. Use --output for the output directory.";
 
             return false;
         }
 
-        // An explicit --output wins over the positional form
-        string outputDirectory = outputFlag
-            ?? (positional.Count == 2 ? positional[1] : Path.Combine(Environment.CurrentDirectory, "output"));
-
-        parsed = new ParsedArguments(positional[0], options with { OutputDirectory = outputDirectory });
+        parsed = new ParsedArguments(positional[0], options);
 
         return true;
     }

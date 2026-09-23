@@ -71,7 +71,7 @@ public static class SurfaceSolver
     /// so the model's bounding box is the artifact size.
     /// The mesh is one node wider and taller than the height field, so the trailing row and column
     /// repeat their neighbour.
-    public static void SetHeightsInMillimetres(Mesh mesh, double[,] heights, double mmPerPixel, double heightScale = 1.0)
+    public static void SetHeightsInMillimetres(Mesh mesh, double[,] heights, double mmPerPixel)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(heights);
@@ -79,13 +79,13 @@ public static class SurfaceSolver
         int width = heights.GetLength(0);
         int height = heights.GetLength(1);
 
-        double lowest = ScalarField.Min(heights) * heightScale;
+        double lowest = ScalarField.Min(heights);
 
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                mesh.NodeArray[x, y].Z = (heights[x, y] * heightScale - lowest) * mmPerPixel;
+                mesh.NodeArray[x, y].Z = (heights[x, y] - lowest) * mmPerPixel;
             }
         }
 

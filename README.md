@@ -38,11 +38,12 @@ The original is Julia; this is a direct transliteration of the same algorithm. S
 ## Usage
 
 ```bash
-dotnet run --project src/CausticGenerator.Cli -c Release -- <image> [output-directory] [options]
+dotnet run --project src/CausticGenerator.Cli -c Release -- <image> [options]
 ```
 
 Writes `original_image.stl` plus per-iteration `loss_itN.png` diagnostics (positive loss blue, negative
-red) to the output directory (default `./output`). Run with `--help` for the same table below.
+red) to the output directory, which defaults to the working directory. Run with `--help` for the same
+table below.
 
 | Flag | Default | Effect |
 |------|---------|--------|
@@ -52,8 +53,7 @@ red) to the output directory (default `./output`). Run with `--help` for the sam
 | `--resize <n\|none>` | `none` | Cap the image's longest edge at n before solving, preserving aspect, to cap solver cost |
 | `--loss-divisor <n\|pixels>` | `pixels` | Divisor that zero-centres the loss field. Pass `262144` for parity with upstream |
 | `--minimum-depth <mm>` | `10` | Material thickness at the thinnest point |
-| `--height-scale <x>` | `1` | Multiplier applied to solved heights |
-| `--output <dir>` | `./output` | Same as the positional output directory, and wins over it |
+| `--output <dir>` | cwd | Where to write output |
 | `--no-loss-images` | off | Skip the loss PNG diagnostics |
 | `--save-obj` | off | Also write OBJ alongside the STL |
 | `-h`, `--help` | | Show usage |
@@ -95,7 +95,7 @@ hundredths of a millimetre where marched edge nodes drift just outside the grid.
 
 ```bash
 # Bigger, longer-throw lens, three iterations, thinner at its thinnest point
-dotnet run --project src/CausticGenerator.Cli -c Release -- cat.jpg ./out \
+dotnet run --project src/CausticGenerator.Cli -c Release -- cat.jpg --output ./out \
     --artifact-size 150 --focal-length 300 --iterations 3 --minimum-depth 4
 ```
 
@@ -103,7 +103,7 @@ Or publish once and invoke the binary:
 
 ```bash
 dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
-./dist/caustic-generator cat.jpg ./out --save-obj
+./dist/caustic-generator cat.jpg --output ./out --save-obj
 ```
 
 ## Deviations from the Julia original
@@ -118,6 +118,11 @@ dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
   anywhere relative to z = 0. This zeroes the lowest point of the surface and takes a single
   `--minimum-depth` in millimetres. See "Units and scale".
 - **Output is in millimetres.** Upstream writes metres, scaled by the hardcoded 512 factor.
+- **No height-scale knob.** Upstream's `setHeights!` takes a `heightScale` multiplier, though it only
+  ever passes 1. Scaling the solved relief scales every refraction angle with it, so `heightScale: k`
+  produces a lens that focuses at roughly `f / k` while still claiming `f` — measurably so: doubling it
+  matches halving `--focal-length` to within 0.5%. `--focal-length` does the same job consistently, so
+  the multiplier is gone rather than kept as a trap.
 - **Relaxation branches collapsed.** The original spells out nine cases (four corners, four edges,
   interior). This sums the neighbours that exist and divides by that count, which is arithmetically
   identical.

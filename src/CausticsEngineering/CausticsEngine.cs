@@ -15,8 +15,6 @@ public sealed record CausticsOptions
 
     public int Iterations { get; init; } = 4;
 
-    public double HeightScale { get; init; } = 1.0;
-
     /// Material thickness at the thinnest point of the lens. The solved surface is shifted so its
     /// lowest point sits at z = 0 and the flat back face is placed this far below it.
     public double MinimumDepthMm { get; init; } = 10;
@@ -26,6 +24,7 @@ public sealed record CausticsOptions
     /// image size, so pass that explicitly for bit-for-bit parity with it on other sizes.
     public int? LossNormalisationDivisor { get; init; }
 
+    /// Defaults to the working directory.
     public string OutputDirectory { get; init; } = ".";
 
     public bool SaveLossImages { get; init; } = true;
@@ -88,7 +87,7 @@ public sealed class CausticsEngine(CausticsOptions? options = null, Action<strin
 
         double mmPerPixel = metersPerPixel * 1000.0;
 
-        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel, _options.HeightScale);
+        SurfaceSolver.SetHeightsInMillimetres(mesh, heights, mmPerPixel);
 
         // The surface now bottoms out at z = 0, so the back face goes one minimum depth below it.
         // STL and OBJ are unitless, and slicers read both as millimetres.
