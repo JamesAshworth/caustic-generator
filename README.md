@@ -2,7 +2,8 @@
 
 C# port of [MattFerraro/causticsEngineering](https://github.com/MattFerraro/causticsEngineering) — given an
 image, it solves for the shape of a transparent lens that, when lit from behind, focuses light into that
-image as a caustic pattern. Output is a watertight solid mesh in Wavefront OBJ, ready for slicing.
+image as a caustic pattern. Output is a watertight solid mesh in binary STL, ready for slicing, with
+Wavefront OBJ available via `--save-obj`.
 
 The original is Julia; this is a direct transliteration of the same algorithm. See
 `THIRD-PARTY-NOTICES` for the upstream MIT licence and copyright.
