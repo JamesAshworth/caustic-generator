@@ -15,6 +15,11 @@ public sealed record CausticsOptions
 
     public int Iterations { get; init; } = 4;
 
+    /// Refractive index of the lens material, used in Snell's law when turning ray displacements
+    /// into surface normals. Default 1.49 is cast acrylic (PMMA); clear epoxy resins run nearer
+    /// 1.565, glass around 1.52. Must be greater than 1.
+    public double RefractiveIndex { get; init; } = 1.49;
+
     /// Material thickness at the thinnest point of the lens. The solved surface is shifted so its
     /// lowest point sits at z = 0 and the flat back face is placed this far below it.
     public double MinimumDepthMm { get; init; } = 10;
@@ -83,6 +88,7 @@ public sealed class CausticsEngine(CausticsOptions? options = null, Action<strin
             target,
             _options.FocalLengthMm / 1000.0,
             _options.ArtifactSizeMm / 1000.0,
+            _options.RefractiveIndex,
             log);
 
         double mmPerPixel = metersPerPixel * 1000.0;

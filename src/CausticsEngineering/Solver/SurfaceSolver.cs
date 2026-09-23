@@ -4,8 +4,6 @@ namespace CausticsEngineering.Solver;
 
 public static class SurfaceSolver
 {
-    private const double RefractiveIndexLens = 1.49;
-
     /// Recovers the lens height field that produces the marched mesh's ray displacements.
     /// Each node's horizontal displacement gives the refracted ray angle, Snell's law turns that
     /// into a required surface normal, and the height field is the Poisson solution whose
@@ -15,8 +13,17 @@ public static class SurfaceSolver
         double[,] image,
         double focalLength,
         double artifactLongestEdgeMeters,
+        double refractiveIndex,
         Action<string>? log = null)
     {
+        if (refractiveIndex <= 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(refractiveIndex),
+                refractiveIndex,
+                "Refractive index must be greater than 1 to bend light.");
+        }
+
         int width = image.GetLength(0);
         int height = image.GetLength(1);
 
@@ -40,8 +47,8 @@ public static class SurfaceSolver
                 double littleH = node.Z * metersPerPixel;
                 double dz = h - littleH;
 
-                normalX[i, j] = Math.Tan(Math.Atan(dx / dz) / (RefractiveIndexLens - 1));
-                normalY[i, j] = Math.Tan(Math.Atan(dy / dz) / (RefractiveIndexLens - 1));
+                normalX[i, j] = Math.Tan(Math.Atan(dx / dz) / (refractiveIndex - 1));
+                normalY[i, j] = Math.Tan(Math.Atan(dy / dz) / (refractiveIndex - 1));
             }
         }
 

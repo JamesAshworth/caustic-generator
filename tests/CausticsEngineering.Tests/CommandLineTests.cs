@@ -11,6 +11,7 @@ public class CommandLineTests
     [
         new("--artifact-size", "250", o => o.ArtifactSizeMm, 250.0),
         new("--focal-length", "1500", o => o.FocalLengthMm, 1500.0),
+        new("--refractive-index", "1.565", o => o.RefractiveIndex, 1.565),
         new("--iterations", "9", o => o.Iterations, 9),
         new("--resize", "256", o => o.ResizeTo, 256),
         new("--loss-divisor", "1024", o => o.LossNormalisationDivisor, 1024),
@@ -23,6 +24,9 @@ public class CommandLineTests
         ["--artifact-size", "0", "cat.jpg"],
         ["--artifact-size", "-1", "cat.jpg"],
         ["--focal-length", "0", "cat.jpg"],
+        ["--refractive-index", "1", "cat.jpg"],
+        ["--refractive-index", "0.9", "cat.jpg"],
+        ["--refractive-index", "glass", "cat.jpg"],
         ["--iterations", "0", "cat.jpg"],
         ["--iterations", "1.5", "cat.jpg"],
         ["--loss-divisor", "0", "cat.jpg"],
@@ -241,6 +245,7 @@ public class CommandLineTests
         [
             nameof(CausticsOptions.ArtifactSizeMm),
             nameof(CausticsOptions.FocalLengthMm),
+            nameof(CausticsOptions.RefractiveIndex),
             nameof(CausticsOptions.Iterations),
             nameof(CausticsOptions.ResizeTo),
             nameof(CausticsOptions.LossNormalisationDivisor),

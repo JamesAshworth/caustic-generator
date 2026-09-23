@@ -20,6 +20,9 @@ public static class CommandLine
         Optics:
           --artifact-size <mm>        Longest edge of the printed lens. Default 100.
           --focal-length <mm>         Distance from lens to projection surface. Default 200.
+          --refractive-index <n>      Refractive index of the lens material, used in Snell's law.
+                                      Must be greater than 1. Default 1.49 (cast acrylic); clear
+                                      epoxy resin is nearer 1.565, glass around 1.52.
 
         Solver:
           --iterations <n>            Outer march iterations. Default 4.
@@ -108,6 +111,23 @@ public static class CommandLine
                     }
 
                     options = options with { FocalLengthMm = focalLength };
+                    break;
+
+                case "--refractive-index":
+                    if (!TryDouble(arg, value, out double refractiveIndex, out message))
+                    {
+                        return false;
+                    }
+
+                    // n = 1 would divide by zero in Snell's law, and below 1 bends the wrong way
+                    if (refractiveIndex <= 1)
+                    {
+                        message = $"Option {arg} needs a number greater than 1, got '{value}'.";
+
+                        return false;
+                    }
+
+                    options = options with { RefractiveIndex = refractiveIndex };
                     break;
 
                 case "--resize":

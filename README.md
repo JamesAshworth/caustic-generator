@@ -19,9 +19,9 @@ The original is Julia; this is a direct transliteration of the same algorithm. S
    - Solve `laplacian(phi) = loss` by successive over-relaxation with Neumann boundaries.
    - March every node down `grad(phi)`. The step is half the smallest positive time at which any
      triangle would collapse, so no triangle can invert.
-4. Turn the resulting node displacements into refracted ray angles, apply Snell's law at n = 1.49 to get
-   the required surface normals, and solve a second Poisson problem for the height field whose gradient
-   matches them.
+4. Turn the resulting node displacements into refracted ray angles, apply Snell's law at the material's
+   refractive index (`--refractive-index`, default 1.49 for cast acrylic) to get the required surface
+   normals, and solve a second Poisson problem for the height field whose gradient matches them.
 5. Write the heights onto the mesh, converting from pixels to millimetres and shifting the surface so
    its lowest point is z = 0, solidify it (flat back face + skirt), and save as binary STL.
 
@@ -50,6 +50,7 @@ table below.
 |------|---------|--------|
 | `--artifact-size <mm>` | `100` | Longest edge of the printed lens |
 | `--focal-length <mm>` | `200` | Distance from lens to projection surface |
+| `--refractive-index <n>` | `1.49` | Refractive index of the lens material, must be > 1 |
 | `--iterations <n>` | `4` | Outer march iterations |
 | `--resize <n\|none>` | `none` | Cap the image's longest edge at n before solving, preserving aspect, to cap solver cost |
 | `--loss-divisor <n\|pixels>` | `pixels` | Divisor that zero-centres the loss field. Pass `262144` for parity with upstream |
