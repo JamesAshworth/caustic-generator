@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using CausticsEngineering.Geometry;
 using CausticsEngineering.Solver;
 using NUnit.Framework;
@@ -58,6 +60,84 @@ public class CausticsEngineTests
 
         // THEN the solid lens mesh is written to the output directory
         Assert.That(File.Exists(Path.Combine(_outputDirectory, "original_image.stl")), Is.True);
+    }
+
+    [Test]
+    public void EngineerCaustics_StepRequested_WritesAClosedBrepSolid()
+    {
+        // GIVEN STEP output requested
+        CausticsOptions options = Options() with { Formats = OutputFormats.Step };
+
+        // WHEN caustics are engineered
+        new CausticsEngine(options).EngineerCaustics(Uniform());
+        string step = File.ReadAllText(Path.Combine(_outputDirectory, "original_image.stp"));
+
+        // THEN the STEP file is a solid whose lens surface is one B-spline patch, written from the
+        // open surface rather than from the solidified triangle mesh
+        Assert.Multiple(() =>
+        {
+            Assert.That(step, Does.Contain("MANIFOLD_SOLID_BREP"));
+            Assert.That(step, Does.Contain("B_SPLINE_SURFACE_WITH_KNOTS"));
+        });
+    }
+
+    [TestCaseSource(nameof(FormatCases))]
+    public void EngineerCaustics_Formats_WritesExactlyThoseFiles(OutputFormats formats, string[] expected)
+    {
+        // GIVEN a specific set of formats
+        CausticsOptions options = Options() with { Formats = formats };
+
+        // WHEN caustics are engineered
+        new CausticsEngine(options).EngineerCaustics(Uniform());
+
+        // THEN only those files are written: asking for one format does not drag the others along
+        Assert.That(
+            Directory.GetFiles(_outputDirectory).Select(Path.GetFileName),
+            Is.EquivalentTo(expected));
+    }
+
+    [Test]
+    public void EngineerCaustics_NoFormats_SolvesWithoutWritingAMesh()
+    {
+        // GIVEN no output format, which the CLI never produces but an API caller may want
+        CausticsOptions options = Options() with { Formats = OutputFormats.None };
+
+        // WHEN caustics are engineered
+        CausticsResult result = new CausticsEngine(options).EngineerCaustics(Uniform());
+
+        // THEN the solve still returns its result, and nothing is written
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Heights, Is.Not.Null);
+            Assert.That(Directory.GetFiles(_outputDirectory), Is.Empty);
+        });
+    }
+
+    [Test]
+    public void EngineerCaustics_WithStepRequested_PutsTheStepSolidInTheSameBoxAsTheStl()
+    {
+        // GIVEN an artifact size and depth to check against
+        CausticsOptions options = Options() with
+        {
+            Formats = OutputFormats.Step,
+            ArtifactSizeMm = 60,
+            MinimumDepthMm = 3,
+        };
+
+        // WHEN caustics are engineered
+        new CausticsEngine(options).EngineerCaustics(Uniform());
+        string step = File.ReadAllText(Path.Combine(_outputDirectory, "original_image.stp"));
+
+        double[] zs = StepVertexCoordinates(step, component: 2);
+        double[] xs = StepVertexCoordinates(step, component: 0);
+
+        // THEN the STEP solid carries the same artifact size and back-face depth the STL does,
+        // so the two formats describe the same lens
+        Assert.Multiple(() =>
+        {
+            Assert.That(xs.Max(), Is.EqualTo(60).Within(0.01));
+            Assert.That(zs.Min(), Is.EqualTo(-3).Within(1e-9));
+        });
     }
 
     [Test]
@@ -315,6 +395,33 @@ public class CausticsEngineTests
 
         return image;
     }
+
+    /// The corner vertices of the STEP solid, by axis. Control points are excluded: a cubic
+    /// control net can sit outside the data it interpolates, so it does not bound the solid.
+    private static double[] StepVertexCoordinates(string step, int component)
+    {
+        Dictionary<string, string[]> points = Regex
+            .Matches(step, @"#(\d+)=CARTESIAN_POINT\('',\(([^)]+)\)\)")
+            .ToDictionary(match => match.Groups[1].Value, match => match.Groups[2].Value.Split(','));
+
+        return Regex
+            .Matches(step, @"=VERTEX_POINT\('',#(\d+)\)")
+            .Select(match => points[match.Groups[1].Value][component])
+            .Select(value => double.Parse(value.TrimEnd('.'), CultureInfo.InvariantCulture))
+            .ToArray();
+    }
+
+    private static readonly IList<object[]> FormatCases =
+    [
+        [OutputFormats.Stl, new[] { "original_image.stl" }],
+        [OutputFormats.Obj, new[] { "original_image.obj" }],
+        [OutputFormats.Step, new[] { "original_image.stp" }],
+        [OutputFormats.Stl | OutputFormats.Step, new[] { "original_image.stl", "original_image.stp" }],
+        [
+            OutputFormats.Stl | OutputFormats.Obj | OutputFormats.Step,
+            new[] { "original_image.stl", "original_image.obj", "original_image.stp" }
+        ],
+    ];
 
     private CausticsEngine Engine() => new(Options());
 

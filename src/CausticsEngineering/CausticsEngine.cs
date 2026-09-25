@@ -4,6 +4,24 @@ using CausticsEngineering.Solver;
 
 namespace CausticsEngineering;
 
+/// Mesh formats the pipeline can save. None solves and returns the result without writing a mesh,
+/// for when only the loss diagnostics or the in-memory surface are wanted.
+[Flags]
+public enum OutputFormats
+{
+    None = 0,
+
+    /// Binary STL. What slicers want, and the default.
+    Stl = 1,
+
+    /// Wavefront OBJ. Keeps vertex sharing and the grid dimensions, so ObjWriter.Load can read it
+    /// back into a Mesh.
+    Obj = 2,
+
+    /// STEP AP214. A B-rep solid whose lens surface is one B-spline patch, for handing to CAD.
+    Step = 4,
+}
+
 /// All lengths are millimetres. The pixel-to-millimetre scale is derived from the image's own
 /// longest edge, so no dimension is tied to a particular image size or aspect ratio.
 public sealed record CausticsOptions
@@ -34,9 +52,8 @@ public sealed record CausticsOptions
 
     public bool SaveLossImages { get; init; } = true;
 
-    /// STL is always written. Set this to additionally write OBJ, which preserves vertex sharing
-    /// and grid dimensions and so can be loaded back into a Mesh via ObjWriter.Load.
-    public bool AlsoSaveObj { get; init; }
+    /// Mesh formats to save. Combine them freely — each is written from the same solved surface.
+    public OutputFormats Formats { get; init; } = OutputFormats.Stl;
 
     /// Longest edge the input image is resized to before solving, preserving aspect ratio.
     /// Both Poisson solves cost O(pixels) per sweep over thousands of sweeps, so this caps the
@@ -50,8 +67,8 @@ public sealed class CausticsEngine(CausticsOptions? options = null, Action<strin
 {
     private readonly CausticsOptions _options = options ?? new CausticsOptions();
 
-    /// Solves for the lens that focuses light into the given greyscale image and writes the
-    /// solid mesh to `original_image.stl` in the output directory.
+    /// Solves for the lens that focuses light into the given greyscale image and writes it to
+    /// `original_image.*` in the output directory, in each format Formats asks for.
     public CausticsResult EngineerCaustics(double[,] greyscaleImage)
     {
         ArgumentNullException.ThrowIfNull(greyscaleImage);
@@ -101,11 +118,25 @@ public sealed class CausticsEngine(CausticsOptions? options = null, Action<strin
 
         Directory.CreateDirectory(_options.OutputDirectory);
 
-        StlWriter.Save(solidMesh, Path.Combine(_options.OutputDirectory, "original_image.stl"));
+        if (_options.Formats.HasFlag(OutputFormats.Stl))
+        {
+            StlWriter.Save(solidMesh, Path.Combine(_options.OutputDirectory, "original_image.stl"));
+        }
 
-        if (_options.AlsoSaveObj)
+        if (_options.Formats.HasFlag(OutputFormats.Obj))
         {
             ObjWriter.Save(solidMesh, Path.Combine(_options.OutputDirectory, "original_image.obj"));
+        }
+
+        // STEP takes the open surface, not solidMesh: it closes the solid with planar faces of
+        // its own rather than with the skirt and back-face triangles
+        if (_options.Formats.HasFlag(OutputFormats.Step))
+        {
+            StepWriter.Save(
+                mesh,
+                Path.Combine(_options.OutputDirectory, "original_image.stp"),
+                -_options.MinimumDepthMm,
+                mmPerPixel);
         }
 
         return new CausticsResult(mesh, target, heights, mmPerPixel);

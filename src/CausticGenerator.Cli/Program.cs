@@ -5,6 +5,13 @@ namespace CausticGenerator.Cli;
 
 public static class Program
 {
+    private static readonly (OutputFormats Format, string Extension)[] SavedFormats =
+    [
+        (OutputFormats.Stl, "stl"),
+        (OutputFormats.Obj, "obj"),
+        (OutputFormats.Step, "stp"),
+    ];
+
     public static int Main(string[] args)
     {
         if (!CommandLine.TryParse(args, out ParsedArguments? parsed, out string message))
@@ -29,10 +36,13 @@ public static class Program
         CausticsEngine engine = new(options, Console.WriteLine);
         CausticsResult result = engine.EngineerCaustics(image);
 
-        Console.WriteLine($"Wrote lens mesh to {Path.Combine(options.OutputDirectory, "original_image.stl")}");
-        if (options.AlsoSaveObj)
+        foreach ((OutputFormats format, string extension) in SavedFormats)
         {
-            Console.WriteLine($"Wrote lens mesh to {Path.Combine(options.OutputDirectory, "original_image.obj")}");
+            if (options.Formats.HasFlag(format))
+            {
+                Console.WriteLine(
+                    $"Wrote lens mesh to {Path.Combine(options.OutputDirectory, $"original_image.{extension}")}");
+            }
         }
 
         double widthMm = image.GetLength(0) * result.MmPerPixel;

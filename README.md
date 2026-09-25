@@ -2,8 +2,9 @@
 
 C# port of [MattFerraro/causticsEngineering](https://github.com/MattFerraro/causticsEngineering) — given an
 image, it solves for the shape of a transparent lens that, when lit from behind, focuses light into that
-image as a caustic pattern. Output is a watertight solid mesh in binary STL, ready for slicing, with
-Wavefront OBJ available via `--save-obj`.
+image as a caustic pattern. Output is a watertight solid: binary STL by default, ready for slicing, with
+Wavefront OBJ and a STEP CAD solid also available. Pick formats with `--save-stl`, `--save-obj` and
+`--save-step`.
 
 The original is Julia; this is a direct transliteration of the same algorithm. See
 `THIRD-PARTY-NOTICES` for the upstream MIT licence and copyright.
@@ -29,9 +30,9 @@ The original is Julia; this is a direct transliteration of the same algorithm. S
 
 | Path | Contents |
 |------|----------|
-| `src/CausticsEngineering/Geometry/` | `Point3D`, `Triangle`, `Mesh`, `MeshBuilder` (square mesh, solidify) |
+| `src/CausticsEngineering/Geometry/` | `Point3D`, `Vec3`, `Triangle`, `Mesh`, `MeshBuilder` (square mesh, solidify), `BSplineSurface` |
 | `src/CausticsEngineering/Solver/` | `ScalarField` (gradient, pixel area, relaxation), `MeshMarcher`, `SurfaceSolver` |
-| `src/CausticsEngineering/Io/` | `StlWriter` (default output), `ObjWriter`, `ImageIo` (greyscale load, loss visualisation) |
+| `src/CausticsEngineering/Io/` | `StlWriter` (default output), `ObjWriter`, `StepWriter`, `ImageIo` (greyscale load, loss visualisation) |
 | `src/CausticsEngineering/CausticsEngine.cs` | Top-level pipeline and `CausticsOptions` |
 | `src/CausticGenerator.Cli/` | Console entry point |
 | `tests/CausticsEngineering.Tests/` | NUnit tests |
@@ -57,12 +58,59 @@ table below.
 | `--minimum-depth <mm>` | `10` | Material thickness at the thinnest point |
 | `--output <dir>` | cwd | Where to write output |
 | `--no-loss-images` | off | Skip the loss PNG diagnostics |
-| `--save-obj` | off | Also write OBJ alongside the STL |
+| `--save-stl` | on unless another is given | Write binary STL |
+| `--save-obj` | off | Write Wavefront OBJ |
+| `--save-step` | off | Write a STEP CAD solid |
 | `-h`, `--help` | | Show usage |
 
-STL is the default output: it is what slicers want, and binary STL keeps the file compact. OBJ preserves
-vertex sharing and the grid dimensions, so it can be loaded back into a `Mesh` with `ObjWriter.Load`,
-which STL cannot.
+### Mesh formats
+
+The three format flags combine freely and are order-independent. **Give none and STL is written. Give
+one or more and exactly those are written** — so `--save-step` on its own writes STEP and no STL, while
+`--save-stl --save-step` writes both. Repeating a flag is harmless.
+
+| Format | File | Why |
+|--------|------|-----|
+| STL | `original_image.stl` | The default. What slicers want, and binary STL keeps it compact |
+| OBJ | `original_image.obj` | Keeps vertex sharing and the grid dimensions, so `ObjWriter.Load` can read it back into a `Mesh`, which STL cannot |
+| STEP | `original_image.stp` | A CAD solid rather than a mesh — see below |
+
+Through the library the same choice is one `Formats` property on `CausticsOptions`, a `[Flags]` enum
+defaulting to `OutputFormats.Stl`. `OutputFormats.None` solves and returns the result without writing a
+mesh, which is useful when only the loss diagnostics or the in-memory surface are wanted.
+
+### STEP output
+
+`--save-step` writes `original_image.stp`: the same solid as the STL, but as a boundary
+representation rather than a mesh. The lens surface becomes a single bicubic B-spline patch, and the
+skirt and back face become five planes, so the solid has **six faces** where the STL has half a million
+facets. For an 85 mm lens off a 440 x 289 image that is 11 MB against the STL's 25 MB, and it opens as a
+solid with editable faces instead of a facet soup a CAD kernel has to be talked into accepting.
+
+Written as AP214 (`automotive_design`), the most widely read STEP flavour, with millimetre units
+declared explicitly so the recipient's importer never has to infer the scale.
+
+Three properties make the solid watertight by construction rather than within a tolerance:
+
+- The fit **interpolates** the solved nodes rather than using them as control points. Feeding a node
+  grid straight in as a control net would smooth the relief, and the relief is the caustic.
+- Each skirt face is bounded by the **surface's own boundary curve** — the same control points and
+  knots, not a copy fitted separately. A copy would only ever sew to a tolerance.
+- The four boundary control rows are **pinned to the rectangle**. Marched edge nodes drift a few
+  hundredths of a millimetre outside the grid, so they are snapped to the same rectangle
+  `Solidify` gives the back face, which is what makes all four skirts exactly planar rather than
+  doubly curved. The snap alone is not quite enough: a B-spline reproduces a constant exactly in
+  theory but the collocation solve does so only to round-off, erratically and depending on the data,
+  so the rows are pinned afterwards.
+
+The cost is one control point per pixel — 127,890 for the example above. That is a large single patch,
+and a CAD kernel will take a moment over it. Pair `--save-step` with `--resize` if the recipient's
+tooling struggles.
+
+STEP output has not been opened in a commercial CAD package as part of this work. What is verified, by
+test, is that the file parses, has no dangling references, declares millimetres, carries exactly six
+faces on one closed shell, uses every edge exactly once in each direction, and keeps every boundary
+curve bit-exactly in its skirt plane.
 
 Everything on `CausticsOptions` has a flag, and a test fails if a new option is added without one.
 Options are order-independent and may precede the image.
@@ -99,13 +147,17 @@ hundredths of a millimetre where marched edge nodes drift just outside the grid.
 # Bigger, longer-throw lens, three iterations, thinner at its thinnest point
 dotnet run --project src/CausticGenerator.Cli -c Release -- cat.jpg --output ./out \
     --artifact-size 150 --focal-length 300 --iterations 3 --minimum-depth 4
+
+# STEP only, for handing to CAD, with the solve capped to keep the patch manageable
+dotnet run --project src/CausticGenerator.Cli -c Release -- cat.jpg --output ./out \
+    --save-step --resize 300
 ```
 
 Or publish once and invoke the binary:
 
 ```bash
 dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
-./dist/caustic-generator cat.jpg --output ./out --save-obj
+./dist/caustic-generator cat.jpg --output ./out --save-stl --save-obj
 ```
 
 ## Deviations from the Julia original
@@ -130,8 +182,10 @@ dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
   identical.
 - **NaN during relaxation throws** rather than printing and returning a partial result.
 - **Greyscale conversion** uses Rec. 601 luma weights (0.299/0.587/0.114) to match Julia's `Gray`.
-- **Output format.** Upstream saves OBJ only. This writes binary STL by default, with OBJ available via
-  `AlsoSaveObj`. STL has no vertex sharing, so each facet is emitted standalone with a computed normal.
+- **Output format.** Upstream saves OBJ only. This writes binary STL by default and takes any
+  combination of STL, OBJ and STEP. STL has no vertex sharing, so each facet is emitted standalone with
+  a computed normal. STEP has no upstream counterpart at all: it is a B-rep solid built from a B-spline
+  fit of the solved surface rather than any form of the triangle mesh.
 - **Not ported:** the Julia `quiver` plotting helpers (`plotAsQuiver`, `plotVAsQuiver`) and the
   interactive test scratchpads, which were debugging aids for the original blog post.
 - Vertex indices stay 1-based to match the OBJ face convention; array indices are 0-based.
@@ -142,11 +196,13 @@ dotnet publish src/CausticGenerator.Cli -c Release -o ./dist
 dotnet test
 ```
 
-91 tests covering triangle geometry, mesh construction and solidification, gradient and pixel-area
+128 tests covering triangle geometry, mesh construction and solidification, gradient and pixel-area
 computation, relaxation convergence (including that a non-zero-mean source has no solution), the
-non-inverting march guarantee, STL facet layout and normals, OBJ round-tripping, CLI parsing of every
-option, image loading and aspect-preserving resize, and the end-to-end pipeline. The depth and scale
-guarantees are asserted against the bounds of the saved STL, so they are checked as a slicer would see
-them rather than in memory, in both landscape and portrait.
+non-inverting march guarantee, STL facet layout and normals, OBJ round-tripping, B-spline interpolation
+and its exact corner behaviour, STEP topology and planarity, CLI parsing of every option, image loading
+and aspect-preserving resize, format selection writing exactly the files asked for, and the end-to-end
+pipeline. The depth and scale guarantees are asserted
+against the bounds of the saved STL and STEP, so they are checked as a slicer or a CAD importer would
+see them rather than in memory, in both landscape and portrait.
 
 Targets .NET 10.

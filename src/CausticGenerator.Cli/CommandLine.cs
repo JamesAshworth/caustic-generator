@@ -40,7 +40,16 @@ public static class CommandLine
         Output:
           --output <dir>              Where to write output. Defaults to the working directory.
           --no-loss-images            Skip the per-iteration loss PNG diagnostics.
-          --save-obj                  Also write OBJ alongside the STL.
+
+        Mesh formats. Give none and STL is written. Give one or more and exactly those are written,
+        so --save-step on its own writes STEP and no STL. They combine freely.
+          --save-stl                  Write binary STL. What slicers want.
+          --save-obj                  Write Wavefront OBJ. Keeps vertex sharing and the grid
+                                      dimensions, so it can be read back into a mesh.
+          --save-step                 Write STEP (.stp): a CAD solid whose lens surface is one
+                                      B-spline patch rather than facets. Cost is a control point
+                                      per pixel, so pair it with --resize on a large image if the
+                                      recipient's CAD struggles.
           -h, --help                  Show this help.
         """;
 
@@ -63,6 +72,11 @@ public static class CommandLine
         List<string> positional = [];
         CausticsOptions options = new();
 
+        // Tracked separately from options so that "no format flag given" stays distinguishable
+        // from "STL asked for", which is what lets the first flag replace the default rather than
+        // add to it
+        OutputFormats formats = OutputFormats.None;
+
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
@@ -73,8 +87,16 @@ public static class CommandLine
                     options = options with { SaveLossImages = false };
                     continue;
 
+                case "--save-stl":
+                    formats |= OutputFormats.Stl;
+                    continue;
+
                 case "--save-obj":
-                    options = options with { AlsoSaveObj = true };
+                    formats |= OutputFormats.Obj;
+                    continue;
+
+                case "--save-step":
+                    formats |= OutputFormats.Step;
                     continue;
             }
 
@@ -208,6 +230,11 @@ public static class CommandLine
             message = $"Expected a single image, got {positional.Count} values. Use --output for the output directory.";
 
             return false;
+        }
+
+        if (formats != OutputFormats.None)
+        {
+            options = options with { Formats = formats };
         }
 
         parsed = new ParsedArguments(positional[0], options);

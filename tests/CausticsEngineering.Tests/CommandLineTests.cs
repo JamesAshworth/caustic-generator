@@ -18,6 +18,19 @@ public class CommandLineTests
         new("--minimum-depth", "3.5", o => o.MinimumDepthMm, 3.5),
     ];
 
+    private static readonly IList<object[]> FormatCases =
+    [
+        [new[] { "--save-stl" }, OutputFormats.Stl],
+        [new[] { "--save-obj" }, OutputFormats.Obj],
+        [new[] { "--save-step" }, OutputFormats.Step],
+        [new[] { "--save-stl", "--save-step" }, OutputFormats.Stl | OutputFormats.Step],
+        [new[] { "--save-obj", "--save-step" }, OutputFormats.Obj | OutputFormats.Step],
+        [
+            new[] { "--save-stl", "--save-obj", "--save-step" },
+            OutputFormats.Stl | OutputFormats.Obj | OutputFormats.Step
+        ],
+    ];
+
     private static readonly IList<string[]> RejectedCases =
     [
         ["--artifact-size", "nonsense", "cat.jpg"],
@@ -120,12 +133,14 @@ public class CommandLineTests
         // WHEN it is parsed
         bool parsedOk = CommandLine.TryParse(["cat.jpg"], out ParsedArguments? parsed, out string message);
 
-        // THEN every option holds its engine default, output included
+        // THEN every option holds its engine default, output included, and with no format flag
+        // given that means STL alone
         Assert.Multiple(() =>
         {
             Assert.That(parsedOk, Is.True, message);
             Assert.That(parsed!.Options, Is.EqualTo(new CausticsOptions()));
             Assert.That(parsed.Options.OutputDirectory, Is.EqualTo("."));
+            Assert.That(parsed.Options.Formats, Is.EqualTo(OutputFormats.Stl));
         });
     }
 
@@ -166,20 +181,55 @@ public class CommandLineTests
     }
 
     [Test]
-    public void TryParse_BooleanFlags_FlipTheirOptions()
+    public void TryParse_NoLossImages_TurnsOffTheDiagnostics()
     {
-        // GIVEN both boolean flags
-        string[] args = ["cat.jpg", "--no-loss-images", "--save-obj"];
+        // GIVEN the diagnostics opt-out
+        string[] args = ["cat.jpg", "--no-loss-images"];
 
         // WHEN the arguments are parsed
         bool parsedOk = CommandLine.TryParse(args, out ParsedArguments? parsed, out string message);
 
-        // THEN loss diagnostics are off and OBJ output is on
+        // THEN the loss PNGs are skipped and nothing else moves
         Assert.Multiple(() =>
         {
             Assert.That(parsedOk, Is.True, message);
             Assert.That(parsed!.Options.SaveLossImages, Is.False);
-            Assert.That(parsed.Options.AlsoSaveObj, Is.True);
+            Assert.That(parsed.Options.Formats, Is.EqualTo(OutputFormats.Stl));
+        });
+    }
+
+    [TestCaseSource(nameof(FormatCases))]
+    public void TryParse_FormatFlags_SelectExactlyThoseFormats(string[] flags, OutputFormats expected)
+    {
+        // GIVEN an image plus whichever format flags were asked for
+        string[] args = ["cat.jpg", .. flags];
+
+        // WHEN the arguments are parsed
+        bool parsedOk = CommandLine.TryParse(args, out ParsedArguments? parsed, out string message);
+
+        // THEN the first flag replaces the STL default rather than adding to it, so --save-step
+        // alone writes STEP and no STL
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsedOk, Is.True, message);
+            Assert.That(parsed!.Options.Formats, Is.EqualTo(expected));
+        });
+    }
+
+    [Test]
+    public void TryParse_TheSameFormatFlagTwice_SelectsItOnce()
+    {
+        // GIVEN a repeated format flag
+        string[] args = ["cat.jpg", "--save-obj", "--save-obj"];
+
+        // WHEN the arguments are parsed
+        bool parsedOk = CommandLine.TryParse(args, out ParsedArguments? parsed, out string message);
+
+        // THEN repeating a flag is harmless rather than an error
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsedOk, Is.True, message);
+            Assert.That(parsed!.Options.Formats, Is.EqualTo(OutputFormats.Obj));
         });
     }
 
@@ -233,7 +283,7 @@ public class CommandLineTests
             Assert.That(parsedOk, Is.True, message);
             Assert.That(parsed!.ImagePath, Is.EqualTo("cat.jpg"));
             Assert.That(parsed.Options.Iterations, Is.EqualTo(2));
-            Assert.That(parsed.Options.AlsoSaveObj, Is.True);
+            Assert.That(parsed.Options.Formats, Is.EqualTo(OutputFormats.Obj));
         });
     }
 
@@ -257,7 +307,7 @@ public class CommandLineTests
         [
             nameof(CausticsOptions.OutputDirectory),
             nameof(CausticsOptions.SaveLossImages),
-            nameof(CausticsOptions.AlsoSaveObj),
+            nameof(CausticsOptions.Formats),
         ];
 
         string[] all = typeof(CausticsOptions)
